@@ -1,0 +1,460 @@
+openapi: 3.0.3
+info:
+  title: Silvia · API de Web Services
+  version: 1.0.0
+  description: |
+    API REST do **Silvia**, plataforma gamificada de apoio ao Sistema de Gestão Ambiental (ISO 14001).
+
+    **Autenticação:** faça `POST /auth/login` e use o token no botão **Authorize** (`Bearer <token>`).
+    Contas de demonstração: veja `GET /auth/contas-demo` (senha `silvia123`).
+
+    **Tempo real:** conecte em `ws://<servidor>/tempo-real?token=<jwt>` para receber eventos
+    (`feed.novo`, `planta.atualizada`, `notificacao.nova`, `validacao.nova`, `validacao.decidida`,
+    `nc.atualizada`, `plantio.agendado`, `floresta.atualizada`, `setor.atualizado`, `canteiro.atualizado`).
+    Sem token, a conexão é pública e recebe apenas `floresta.atualizada`.
+
+    **Erros:** sempre no formato `{ "erro": { "codigo", "mensagem", "detalhes" } }`.
+servers:
+  - url: /api/v1
+tags:
+  - { name: Público, description: Rotas sem login }
+  - { name: Autenticação }
+  - { name: Usuário, description: Usuário logado, planta e avisos }
+  - { name: Ações, description: "Regar: ações ambientais com evidência (8.1, 7.5)" }
+  - { name: Não conformidades, description: "Podar: desperdícios e ações corretivas (10.2)" }
+  - { name: Treinamentos, description: "Adubar: competência e conscientização (7.2, 7.3)" }
+  - { name: Setores, description: "Metas e medições (6.2, 9.1)" }
+  - { name: Plantios, description: "Árvores reais (7.4); consome o web service ViaCEP" }
+  - { name: Gestão, description: "Indicadores ISO 14031, análise crítica (9.3) e auditoria (9.2)" }
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    id: { name: id, in: path, required: true, schema: { type: integer, minimum: 1 } }
+    setorId: { name: id, in: path, required: true, schema: { type: string, example: fin } }
+  responses:
+    Erro:
+      description: Erro padronizado
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Erro' }
+  schemas:
+    Erro:
+      type: object
+      properties:
+        erro:
+          type: object
+          properties:
+            codigo: { type: string, example: evidencia_obrigatoria }
+            mensagem: { type: string, example: Toda ação precisa de uma evidência (foto ou PDF). }
+            detalhes: {}
+    Usuario:
+      type: object
+      properties:
+        id: { type: integer }
+        nome: { type: string }
+        email: { type: string }
+        perfil: { type: string, enum: [colaborador, gestor, fornecedor] }
+        setorId: { type: string, nullable: true }
+        setorNome: { type: string, nullable: true }
+        fornecedorId: { type: integer, nullable: true }
+        ferias: { type: boolean }
+    Planta:
+      type: object
+      properties:
+        id: { type: integer }
+        usuarioId: { type: integer }
+        dono: { type: string }
+        especie: { type: string, example: Ipê-amarelo }
+        semente: { type: integer, description: Semente usada para desenhar a planta em pixel art }
+        estagio: { type: integer, minimum: 0, maximum: 4 }
+        estagioNome: { type: string, example: Muda }
+        xp: { type: integer }
+        xpProximo: { type: integer }
+        agua: { type: integer }
+        adubo: { type: integer }
+        sol: { type: integer }
+        saude: { type: integer, description: "40% água + 30% adubo + 30% sol − 8 se houver galho seco" }
+        galhoSeco: { type: boolean }
+        murcha: { type: boolean }
+    Acao:
+      type: object
+      properties:
+        id: { type: integer }
+        usuarioId: { type: integer }
+        autorNome: { type: string }
+        tipo: { type: string, enum: [regar, fornecedor] }
+        categoria: { type: string }
+        descricao: { type: string, nullable: true }
+        evidenciaNome: { type: string }
+        temArquivo: { type: boolean }
+        status: { type: string, enum: [pendente, aprovada, recusada] }
+        motivo: { type: string, nullable: true }
+        pontos: { type: integer }
+        criadoEm: { type: string, format: date-time }
+    NaoConformidade:
+      type: object
+      properties:
+        id: { type: integer }
+        codigo: { type: string, example: NC-042 }
+        tipo: { type: string }
+        local: { type: string }
+        status: { type: string, enum: [aberta, em_acao, fechada, improcedente] }
+        reportadoPorNome: { type: string }
+        responsavel: { type: string, nullable: true }
+        acaoCorretiva: { type: string, nullable: true }
+        abertaEm: { type: string, format: date-time }
+        fechadaEm: { type: string, format: date-time, nullable: true }
+    Plantio:
+      type: object
+      properties:
+        id: { type: integer }
+        setorId: { type: string }
+        setorNome: { type: string }
+        especie: { type: string }
+        status: { type: string, enum: [agendado, plantado] }
+        local: { type: string, nullable: true }
+        cep: { type: string, nullable: true }
+        endereco: { type: string, nullable: true }
+        enderecoVerificado: { type: boolean }
+
+security:
+  - bearer: []
+
+paths:
+  /saude:
+    get:
+      tags: [Público]
+      summary: Verifica se o serviço está no ar
+      security: []
+      responses: { '200': { description: OK } }
+  /catalogo:
+    get:
+      tags: [Público]
+      summary: Listas usadas nos formulários (categorias, motivos, regras do jogo)
+      security: []
+      responses: { '200': { description: OK } }
+  /publico/floresta:
+    get:
+      tags: [Público]
+      summary: Floresta real e indicadores públicos (comunicação externa, 7.4)
+      security: []
+      responses: { '200': { description: OK } }
+
+  /auth/login:
+    post:
+      tags: [Autenticação]
+      summary: Entra no sistema e recebe um token JWT
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, senha]
+              properties:
+                email: { type: string, example: higor@silvia.local }
+                senha: { type: string, example: silvia123 }
+      responses:
+        '200':
+          description: Token e usuário
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token: { type: string }
+                  usuario: { $ref: '#/components/schemas/Usuario' }
+        '401': { $ref: '#/components/responses/Erro' }
+        '422': { $ref: '#/components/responses/Erro' }
+  /auth/contas-demo:
+    get:
+      tags: [Autenticação]
+      summary: Contas de demonstração
+      security: []
+      responses: { '200': { description: OK } }
+
+  /eu:
+    get:
+      tags: [Usuário]
+      summary: Usuário logado, sua planta e quantidade de avisos não lidos
+      responses:
+        '200': { description: OK }
+        '401': { $ref: '#/components/responses/Erro' }
+  /eu/ferias:
+    patch:
+      tags: [Usuário]
+      summary: Liga ou desliga férias (pausa o decaimento da planta)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [ferias], properties: { ferias: { type: boolean } } }
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Erro' } }
+  /eu/notificacoes:
+    get:
+      tags: [Usuário]
+      summary: Avisos do usuário
+      responses: { '200': { description: OK } }
+  /eu/notificacoes/lidas:
+    patch:
+      tags: [Usuário]
+      summary: Marca todos os avisos como lidos
+      responses: { '200': { description: OK } }
+  /feed:
+    get:
+      tags: [Usuário]
+      summary: Feed "Acontecendo agora"
+      parameters: [{ name: limite, in: query, schema: { type: integer, maximum: 500 } }]
+      responses: { '200': { description: OK } }
+
+  /acoes/categorias:
+    get:
+      tags: [Ações]
+      summary: Ações que o usuário pode registrar (e requisitos pendentes, para fornecedores)
+      responses: { '200': { description: OK } }
+  /acoes:
+    get:
+      tags: [Ações]
+      summary: Fila de validação (gestora)
+      parameters: [{ name: status, in: query, schema: { type: string, enum: [pendente, aprovada, recusada] } }]
+      responses:
+        '200':
+          description: Ações
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Acao' } } } }
+        '403': { $ref: '#/components/responses/Erro' }
+    post:
+      tags: [Ações]
+      summary: Registra uma ação ambiental com evidência (colaborador ou fornecedor)
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [evidencia]
+              properties:
+                categoria: { type: string, example: Vim de carona, bike ou transporte público }
+                descricao: { type: string }
+                requisitoId: { type: integer, description: "Apenas para fornecedor: indica o requisito que está sendo comprovado" }
+                evidencia: { type: string, format: binary, description: Imagem ou PDF até 8 MB }
+      responses:
+        '201': { description: Criada, content: { application/json: { schema: { $ref: '#/components/schemas/Acao' } } } }
+        '413': { $ref: '#/components/responses/Erro' }
+        '422': { $ref: '#/components/responses/Erro' }
+  /acoes/minhas:
+    get:
+      tags: [Ações]
+      summary: Histórico de ações do usuário
+      responses: { '200': { description: OK } }
+  /acoes/decididas:
+    get:
+      tags: [Ações]
+      summary: Últimas ações aprovadas ou recusadas (gestora)
+      responses: { '200': { description: OK } }
+  /acoes/{id}/evidencia:
+    get:
+      tags: [Ações]
+      summary: Arquivo da evidência (autor ou gestora)
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: Arquivo }, '404': { $ref: '#/components/responses/Erro' } }
+  /acoes/{id}/avaliacao:
+    patch:
+      tags: [Ações]
+      summary: Aprova ou recusa a evidência (gestora)
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [decisao]
+              properties:
+                decisao: { type: string, enum: [aprovar, recusar] }
+                motivo: { type: string, example: Evidência ilegível }
+      responses:
+        '200': { description: Decisão registrada; devolve a ação e a planta atualizada }
+        '409': { $ref: '#/components/responses/Erro' }
+
+  /ncs:
+    get:
+      tags: [Não conformidades]
+      summary: Lista NCs (gestora vê todas; demais veem as que reportaram)
+      parameters: [{ name: status, in: query, schema: { type: string, enum: [aberta, em_acao, fechada, improcedente] } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/NaoConformidade' } } } } }
+    post:
+      tags: [Não conformidades]
+      summary: Reporta um desperdício (poda o galho seco)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tipo, local]
+              properties:
+                tipo: { type: string, example: Vazamento de água }
+                local: { type: string, example: Copa do 3º andar }
+      responses:
+        '201': { description: Criada, content: { application/json: { schema: { $ref: '#/components/schemas/NaoConformidade' } } } }
+        '422': { $ref: '#/components/responses/Erro' }
+  /ncs/{id}:
+    patch:
+      tags: [Não conformidades]
+      summary: Trata a NC, aceitando, fechando ou marcando como improcedente (gestora)
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [acao]
+              properties:
+                acao: { type: string, enum: [aceitar, fechar, improcedente] }
+                responsavel: { type: string, example: Manutenção }
+                acaoCorretiva: { type: string, example: Trocar o reparo da torneira }
+                eficaciaVerificada: { type: boolean }
+                motivo: { type: string }
+      responses:
+        '200': { description: OK }
+        '409': { $ref: '#/components/responses/Erro' }
+        '422': { $ref: '#/components/responses/Erro' }
+
+  /treinamentos:
+    get:
+      tags: [Treinamentos]
+      summary: Módulos e o status do usuário
+      responses: { '200': { description: OK } }
+  /treinamentos/{id}/tentativas:
+    post:
+      tags: [Treinamentos]
+      summary: Inicia uma tentativa (perguntas sem gabarito)
+      parameters: [{ name: id, in: path, required: true, schema: { type: string, example: m1 } }]
+      responses: { '201': { description: Tentativa criada }, '403': { $ref: '#/components/responses/Erro' } }
+  /tentativas/{id}/respostas:
+    post:
+      tags: [Treinamentos]
+      summary: Responde a próxima pergunta e recebe a correção
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pergunta, opcao]
+              properties:
+                pergunta: { type: integer, minimum: 0 }
+                opcao: { type: integer, minimum: 0 }
+      responses: { '200': { description: Correção }, '409': { $ref: '#/components/responses/Erro' } }
+
+  /setores:
+    get:
+      tags: [Setores]
+      summary: Setores com metas, atingimento e sol
+      responses: { '200': { description: OK } }
+  /setores/{id}:
+    get:
+      tags: [Setores]
+      summary: Detalhe de um setor
+      parameters: [{ $ref: '#/components/parameters/setorId' }]
+      responses: { '200': { description: OK }, '404': { $ref: '#/components/responses/Erro' } }
+  /setores/{id}/canteiro:
+    get:
+      tags: [Setores]
+      summary: Plantas dos colaboradores do setor
+      parameters: [{ $ref: '#/components/parameters/setorId' }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Planta' } } } } }
+  /setores/{id}/medicoes:
+    get:
+      tags: [Setores]
+      summary: Histórico de medições
+      parameters: [{ $ref: '#/components/parameters/setorId' }]
+      responses: { '200': { description: OK } }
+    post:
+      tags: [Setores]
+      summary: Lança a medição do mês (gestora)
+      parameters: [{ $ref: '#/components/parameters/setorId' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mes, energiaKwh, papelFolhas, reciclavelPct]
+              properties:
+                mes: { type: string, example: '2026-11' }
+                energiaKwh: { type: number, example: 3300 }
+                papelFolhas: { type: number, example: 6500 }
+                reciclavelPct: { type: number, example: 72 }
+      responses: { '201': { description: Setor atualizado }, '422': { $ref: '#/components/responses/Erro' } }
+  /fornecedores:
+    get:
+      tags: [Setores]
+      summary: Fornecedores e requisitos (gestora)
+      responses: { '200': { description: OK } }
+  /fornecedores/canteiro:
+    get:
+      tags: [Setores]
+      summary: Plantas dos fornecedores
+      responses: { '200': { description: OK } }
+
+  /plantios:
+    get:
+      tags: [Plantios]
+      summary: Plantios agendados e realizados
+      parameters: [{ name: status, in: query, schema: { type: string, enum: [agendado, plantado] } }]
+      responses:
+        '200': { description: OK, content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/Plantio' } } } } }
+  /plantios/{id}:
+    patch:
+      tags: [Plantios]
+      summary: Registra o plantio (gestora). Consulta o ViaCEP para completar o endereço
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [local, cep]
+              properties:
+                local: { type: string, example: Área de restauração 1 · ONG parceira }
+                cep: { type: string, example: 01310-100 }
+      responses:
+        '200': { description: Plantio registrado }
+        '400': { $ref: '#/components/responses/Erro' }
+        '409': { $ref: '#/components/responses/Erro' }
+        '422': { $ref: '#/components/responses/Erro' }
+
+  /indicadores/painel:
+    get:
+      tags: [Gestão]
+      summary: Indicadores ISO 14031 (IDG, IDO, ICA), alertas, ranking e energia por mês
+      responses: { '200': { description: OK }, '403': { $ref: '#/components/responses/Erro' } }
+  /relatorios/analise-critica:
+    get:
+      tags: [Gestão]
+      summary: Dados da análise crítica pela direção (9.3). Use formato=html para baixar
+      parameters:
+        - { name: formato, in: query, schema: { type: string, enum: [json, html] } }
+      responses: { '200': { description: OK } }
+  /auditoria:
+    get:
+      tags: [Gestão]
+      summary: Trilha de auditoria (9.2). Use formato=csv para baixar
+      parameters:
+        - { name: formato, in: query, schema: { type: string, enum: [json, csv] } }
+        - { name: limite, in: query, schema: { type: integer, maximum: 500 } }
+      responses: { '200': { description: OK } }
+  /admin/ciclo-diario:
+    post:
+      tags: [Gestão]
+      summary: Executa o ciclo diário agora (decaimento das plantas), para demonstração
+      responses: { '200': { description: Resumo do ciclo } }

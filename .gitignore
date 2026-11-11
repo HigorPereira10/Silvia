@@ -1,0 +1,13 @@
+node_modules/
+.env
+data/*.db
+data/*.db-*
+uploads/*
+!uploads/.gitkeep
+!data/.gitkeep
+coverage/
+*.log
+.DS_Store
+
+# Trabalho escrito da APS (contém dados pessoais dos integrantes)
+/*.pdf

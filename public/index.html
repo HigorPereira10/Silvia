@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Silvia · gestão ambiental ISO 14001</title>
+  <meta name="description" content="Silvia: plataforma gamificada de apoio ao Sistema de Gestão Ambiental (ISO 14001).">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@500;700&family=Atkinson+Hyperlegible:wght@400;700&family=VT323&display=swap">
+  <link rel="stylesheet" href="/css/silvia.css">
+</head>
+<body>
+  <!-- A aplicação (login, área logada ou página pública) é desenhada aqui por js/main.js -->
+  <div id="raiz"><p class="carregando" style="padding:24px">Carregando o Silvia…</p></div>
+
+  <div class="modal" id="modal" hidden>
+    <div class="box px" role="dialog" aria-modal="true" aria-label="Janela">
+      <div id="m-body" class="form"></div>
+      <button class="btn ghost" type="button" data-a="fechar" id="m-close">Fechar</button>
+    </div>
+  </div>
+  <div class="toast" id="toast" role="status" hidden></div>
+
+  <noscript>O Silvia precisa de JavaScript ativado.</noscript>
+  <script type="module" src="/js/main.js"></script>
+</body>
+</html>
